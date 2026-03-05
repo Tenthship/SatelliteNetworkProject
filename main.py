@@ -2,11 +2,15 @@ import requests
 from skyfield.api import EarthSatellite, load, Topos
 from datetime import datetime, timedelta, timezone
 import pandas as pd
+import random
+import numpy as np
+import matplotlib.pyplot as plt
 
 response = requests.get("https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle")
-NUM_SATELLITES = 6
+NUM_SATELLITES = 20
 lat, lon, elev_m = 32.85548069219173, -117.20414146258183, 111
 observer = Topos(latitude_degrees=lat, longitude_degrees=lon, elevation_m=elev_m)
+CSV_FILE_NAME = "satellite_network_dataset.csv"
 
 # Function to write TLE data to file
 def write_to_file():
@@ -50,6 +54,10 @@ def populate_times():
     minutes_in_day = 1440
     return ts.from_datetimes([start_time_utc + timedelta(minutes=i) for i in range(minutes_in_day)])
 
+# Function to clamp a value
+def clamp(value, min_val, max_val):
+    return max(min_val, min(value, max_val))
+
 def compute_satellite_positions(skyfield_satellites, times):
     satellite_positions = []
     for t in times:
@@ -57,17 +65,60 @@ def compute_satellite_positions(skyfield_satellites, times):
         for s in skyfield_satellites:
             topocentric = (s - observer).at(t)
             alt, az, distance = topocentric.altaz()
-            latency = 25 + (90 - )
+            latency = None
+            throughput_mbps = 0
+            packet_loss_percent = 100
+            latency_noise = random.randint(-5, 5)
+            throughput_mbps_noise = random.randint(-20, 20)
+            packet_loss_percent_noise = random.randint(-1, 1)
+            if alt.degrees >= 0:
+                latency =  25 + (90 - alt.degrees) * 0.5 + latency_noise
+                throughput_mbps = 200 - (90 - alt.degrees) * 1.5 + throughput_mbps_noise
+                throughput_mbps = clamp(throughput_mbps, 0, 1000)
+                packet_loss_percent = max(0, (20 - alt.degrees) * 0.3 + packet_loss_percent_noise)
+                
             satellite_position = {
                 "time": dt,
                 "name": s.name,
                 "altitude": alt.degrees,
-                "azimuth": az.degrees
+                "azimuth": az.degrees,
+                "latency": latency,
+                "throughput_mbps": throughput_mbps,
+                "packet_loss_percent": packet_loss_percent
             }
             satellite_positions.append(satellite_position)
 
     return satellite_positions
 
+def latency_vs_elevation(df):
+    csv_file = pd.read_csv(df)
+    x = csv_file["altitude"]
+    y = csv_file["latency"]
+    
+    plt_x = np.array(x)
+    plt_y = np.array(y)
+    plt.scatter(plt_x, plt_y)
+    
+    plt.xlabel("Altitude (°)")
+    plt.ylabel("Latency (ms)")
+    plt.title("Altitude vs Latency")
+    
+    plt.show()
+
+def throughput_vs_elevation(df):
+    csv_file = pd.read_csv(df)
+    x = csv_file["altitude"]
+    y = csv_file["throughput_mbps"]
+    
+    plt_x = np.array(x)
+    plt_y = np.array(y)
+    plt.scatter(plt_x, plt_y)
+    
+    plt.xlabel("Altitude (°)")
+    plt.ylabel("Throughput (mbps)")
+    plt.title("Altitude vs Throughput")
+    
+    plt.show()
 
 
 def main():
@@ -78,7 +129,9 @@ def main():
     times = populate_times()
     satellite_positions = compute_satellite_positions(skyfield_satellites, times)
     df = pd.DataFrame(satellite_positions)
-    print(df)
+    df.to_csv(CSV_FILE_NAME, index=False)
+    latency_vs_elevation(CSV_FILE_NAME)
+    throughput_vs_elevation(CSV_FILE_NAME)
 
 main()
 
